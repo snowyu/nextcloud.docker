@@ -1,25 +1,32 @@
 # DO NOT EDIT: created by update.sh from Dockerfile-debian.template
 FROM php:7.3-apache-buster
 
+ADD sources.list /etc/apt/
+COPY supervisord.conf /
+# COPY nextcloud.tar.bz2 /
+# COPY nextcloud.tar.bz2.asc /
+
 # entrypoint.sh and cron.sh dependencies
 RUN set -ex; \
-    \
     rm -rf /var/lib/apt/lists/*; \
     apt-get update; \
-    apt-get install apt -y  --no-install-recommends; \
+    apt-get install apt -y --no-install-recommends; \
     apt-get upgrade -y; \
     apt-get install -y --no-install-recommends \
         rsync \
         bzip2 \
         busybox-static \
-        cron \
+        supervisor \
         nano \
     ; \
-    \
-    mkdir /etc/cron.d; \
-    echo '*/5 * * * * /usr/local/bin/php -f /var/www/html/cron.php' > /etc/cron.d
+    mkdir -p /var/spool/cron/crontabs; \
+    echo '0 */2 * * * php -f /var/www/html/cron.php' > /var/spool/cron/crontabs/www-data; \
+    mkdir /var/log/supervisord /var/run/supervisord
+
+    # mkdir -p /etc/cron.d; \
+    # echo '*/5 * * * * /usr/local/bin/php -f /var/www/html/cron.php' > /etc/cron.d/nextcloud
     # mkdir -p /var/spool/cron/crontabs; \
-    # echo '*/5 * * * * php -f /var/www/html/cron.php' > /var/spool/cron/crontabs/www-data \
+    # echo '0 */2 * * * php -f /var/www/html/cron.php' > /var/spool/cron/crontabs/www-data; \
     # chown www-data:www-data /var/spool/cron/crontabs/www-data
 
 # install the PHP extensions we need
@@ -53,6 +60,7 @@ RUN set -ex; \
     docker-php-ext-configure gmp --with-gmp="/usr/include/$debMultiarch"; \
     docker-php-ext-configure ldap --with-libdir="lib/$debMultiarch"; \
     docker-php-ext-install -j "$(nproc)" \
+        bcmath \
         exif \
         gd \
         intl \
@@ -63,13 +71,12 @@ RUN set -ex; \
         pdo_pgsql \
         zip \
         gmp \
-        bcmath \
     ; \
     \
 # pecl will claim success even if one install fails, so we need to perform each install separately
-    pecl install APCu-5.1.18; \
-    pecl install memcached-3.1.4; \
-    pecl install redis-4.3.0; \
+    pecl install APCu-5.1.19; \
+    pecl install memcached-3.1.5; \
+    pecl install redis-5.3.2; \
     pecl install imagick-3.4.4; \
     \
     docker-php-ext-enable \
@@ -125,7 +132,7 @@ RUN a2enmod rewrite remoteip ;\
     } > /etc/apache2/conf-available/remoteip.conf;\
     a2enconf remoteip
 
-ENV NEXTCLOUD_VERSION 19.0.4
+ENV NEXTCLOUD_VERSION 19.0.5
 
 RUN set -ex; \
     fetchDeps=" \
@@ -147,8 +154,8 @@ RUN set -ex; \
     gpgconf --kill all; \
     rm -r "$GNUPGHOME" nextcloud.tar.bz2.asc nextcloud.tar.bz2; \
     rm -rf /usr/src/nextcloud/updater; \
-    mkdir -p /usr/src/nextcloud/data; \
-    mkdir -p /usr/src/nextcloud/custom_apps; \
+    mkdir /usr/src/nextcloud/data; \
+    mkdir /usr/src/nextcloud/custom_apps; \
     chmod +x /usr/src/nextcloud/occ; \
     \
     apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false $fetchDeps; \
@@ -158,6 +165,7 @@ COPY *.sh upgrade.exclude /
 COPY config/* /usr/src/nextcloud/config/
 
 ENTRYPOINT ["/entrypoint.sh"]
-CMD ["apache2-foreground"]
-CMD update-rc.d cron enable
-CMD service cron start
+
+#ENV NEXTCLOUD_UPDATE=1
+
+CMD ["/usr/bin/supervisord", "-c", "/supervisord.conf"]

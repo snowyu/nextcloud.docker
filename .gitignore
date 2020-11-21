@@ -1,3 +1,6 @@
 data
 db.env
 upgrade
+nextcloud-*.zip
+nextcloud-*.asc
+nextcloud-*.bz2
